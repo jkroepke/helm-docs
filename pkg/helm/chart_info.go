@@ -3,6 +3,7 @@ package helm
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -183,6 +184,14 @@ func parseChartValuesFile(chartDirectory string) (yaml.Node, error) {
 	return values, err
 }
 
+func ParseChartValuesFromYAML(valuesYAML string) (yaml.Node, error) {
+	var values yaml.Node
+	normalizedValuesYAML := strings.Replace(valuesYAML, "\r\n", "\n", -1)
+	err := yaml.Unmarshal([]byte(normalizedValuesYAML), &values)
+	removeIgnored(&values, values.Kind)
+	return values, err
+}
+
 func checkDocumentation(rootNode *yaml.Node, comments map[string]ChartValueDescription, config ChartValuesDocumentationParsingConfig) error {
 	if len(rootNode.Content) == 0 {
 		return nil
@@ -236,18 +245,9 @@ func collectValuesWithoutDoc(node *yaml.Node, comments map[string]ChartValueDesc
 	return valuesWithoutDocs
 }
 
-func parseChartValuesFileComments(chartDirectory string, values *yaml.Node, lintingConfig ChartValuesDocumentationParsingConfig) (map[string]ChartValueDescription, error) {
-	valuesPath := filepath.Join(chartDirectory, viper.GetString("values-file"))
-	valuesFile, err := os.Open(valuesPath)
-
-	if isErrorInReadingNecessaryFile(valuesPath, err) {
-		return map[string]ChartValueDescription{}, err
-	}
-
-	defer valuesFile.Close()
-
+func parseChartValuesFileCommentsFromReader(values *yaml.Node, reader io.Reader, lintingConfig ChartValuesDocumentationParsingConfig) (map[string]ChartValueDescription, error) {
 	keyToDescriptions := make(map[string]ChartValueDescription)
-	scanner := bufio.NewScanner(valuesFile)
+	scanner := bufio.NewScanner(reader)
 	foundValuesComment := false
 	commentLines := make([]string, 0)
 	currentLineIdx := -1
@@ -293,6 +293,15 @@ func parseChartValuesFileComments(chartDirectory string, values *yaml.Node, lint
 		commentLines = make([]string, 0)
 		foundValuesComment = false
 	}
+	if foundValuesComment {
+		key, description := ParseComment(commentLines)
+		if key != "" {
+			keyToDescriptions[key] = description
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
 	if lintingConfig.StrictMode {
 		err := checkDocumentation(values, keyToDescriptions, lintingConfig)
 		if err != nil {
@@ -300,6 +309,24 @@ func parseChartValuesFileComments(chartDirectory string, values *yaml.Node, lint
 		}
 	}
 	return keyToDescriptions, nil
+}
+
+func ParseChartValuesCommentsFromYAML(values *yaml.Node, valuesYAML string, lintingConfig ChartValuesDocumentationParsingConfig) (map[string]ChartValueDescription, error) {
+	normalizedValuesYAML := strings.Replace(valuesYAML, "\r\n", "\n", -1)
+	return parseChartValuesFileCommentsFromReader(values, strings.NewReader(normalizedValuesYAML), lintingConfig)
+}
+
+func parseChartValuesFileComments(chartDirectory string, values *yaml.Node, lintingConfig ChartValuesDocumentationParsingConfig) (map[string]ChartValueDescription, error) {
+	valuesPath := filepath.Join(chartDirectory, viper.GetString("values-file"))
+	valuesFile, err := os.Open(valuesPath)
+
+	if isErrorInReadingNecessaryFile(valuesPath, err) {
+		return map[string]ChartValueDescription{}, err
+	}
+
+	defer valuesFile.Close()
+
+	return parseChartValuesFileCommentsFromReader(values, valuesFile, lintingConfig)
 }
 
 func ParseChartInformation(chartDirectory string, documentationParsingConfig ChartValuesDocumentationParsingConfig) (ChartDocumentationInfo, error) {

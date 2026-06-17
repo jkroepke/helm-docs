@@ -1,5 +1,7 @@
 /helm-docs
 /cmd/helm-docs/helm-docs
+/web/wasm/helm-docs.wasm
+/web/wasm/wasm_exec.js
 dist
 .idea/
 *.iml

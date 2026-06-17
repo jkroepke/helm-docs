@@ -2,6 +2,15 @@
 helm-docs:
 	go build github.com/norwoodj/helm-docs/cmd/helm-docs
 
+.PHONY: wasm
+wasm:
+	GOOS=js GOARCH=wasm go build -o web/wasm/helm-docs.wasm ./cmd/helm-docs-wasm
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" web/wasm/wasm_exec.js
+
+.PHONY: wasm-serve
+wasm-serve: wasm
+	python3 -m http.server 8080 --directory web/wasm
+
 .PHONY: install
 install:
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs
@@ -29,6 +38,7 @@ lint: fmt gosec
 .PHONY: clean
 clean:
 	rm -f helm-docs
+	rm -f web/wasm/helm-docs.wasm web/wasm/wasm_exec.js
 
 .PHONY: dist
 dist:
@@ -38,6 +48,8 @@ dist:
 help:
 	@echo "Available targets:"
 	@echo "  helm-docs    - Build the helm-docs binary"
+	@echo "  wasm         - Build the browser WebAssembly demo"
+	@echo "  wasm-serve   - Build and serve the browser WebAssembly demo on localhost:8080"
 	@echo "  install      - Install the helm-docs binary"
 	@echo "  fmt          - Format Go code"
 	@echo "  test         - Run tests"
